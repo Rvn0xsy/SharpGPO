@@ -116,7 +116,8 @@ namespace SharpGPO
 
             // Some permission correspondences are hard-coded here
             Directory.CreateDirectory(GPODirectory);
-            SetGPOPathACL(GPODirectory, nTSecurityDescriptor);
+            Console.WriteLine("[*] Disable SetGPOPathACL");
+            // SetGPOPathACL(GPODirectory, nTSecurityDescriptor);
 
             Console.WriteLine("[*] Creating GPT.ini");
             string gptPath = $@"{GPODirectory}\GPT.ini";

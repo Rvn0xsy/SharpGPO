@@ -78,16 +78,28 @@ namespace SharpGPO
 
         public DirectoryEntry GetGPOByGuid(string guid)
         {
-            guid = StandardizeGuid(guid);
-            DirectoryEntry policies = ConnectLdapPolicies();
-            DirectorySearcher searcher = new DirectorySearcher(policies);
-            searcher.Filter = $@"(cn={guid})";
-            SearchResultCollection results = searcher.FindAll();
-            if(results.Count != 0)
+            try
             {
-                return results[0].GetDirectoryEntry();
+                guid = StandardizeGuid(guid);
+                Console.WriteLine($@"[+] Searching for GPO with GUID: {guid}");
+                DirectoryEntry policies = ConnectLdapPolicies();
+                DirectorySearcher searcher = new DirectorySearcher(policies);
+                searcher.Filter = $@"(objectGUID={guid})";
+                Console.WriteLine($@"[+] Using LDAP filter: {searcher.Filter}");
+                SearchResultCollection results = searcher.FindAll();
+                if (results.Count != 0)
+                {
+                    Console.WriteLine($@"[+] Found {results.Count} GPO(s) with GUID: {guid}");
+                    return results[0].GetDirectoryEntry();
+                }
+                Console.WriteLine($@"[-] No GPO found with GUID: {guid}");
+                return null;
             }
-            return null;
+            catch (Exception e)
+            {
+                Console.WriteLine($@"[-] An error occurred while retrieving GPO by GUID: {e.Message}");
+                return null;
+            }
         }
 
         public string NewGPO(string name)
@@ -141,36 +153,69 @@ namespace SharpGPO
         public void RemoveGPO(string guid)
         {
             guid = StandardizeGuid(guid);
+            Console.WriteLine($@"[*] Removing GPO with GUID: {guid}");
 
             // 1. Delete the GpLink related to the GPO in LDAP
             Console.WriteLine($@"[*] Step1: Delete all gPLink related to the GPO {guid}");
             DirectoryEntry[] DNs = GetGpLinkByGuid(guid);
-            foreach(var dn in DNs)
+            if (DNs.Length > 0)
             {
-                RemoveGpLink(dn.Properties["distinguishedName"].Value.ToString(), guid);
+                foreach (var dn in DNs)
+                {
+                    RemoveGpLink(dn.Properties["distinguishedName"].Value.ToString(), guid);
+                }
+            }
+            else
+            {
+                Console.WriteLine($@"[+] No gPLinks found for GPO {guid}");
             }
 
             // 2. Delete GPO entry in LDAP
             Console.WriteLine($@"[*] Step2: Delete the LDAP Entry of the GPO {guid}");
             DirectoryEntry gpo = GetGPOByGuid(guid);
-            gpo.DeleteTree();
-            gpo.CommitChanges();
+            if (gpo != null)
+            {
+                gpo.DeleteTree();
+                gpo.CommitChanges();
+                Console.WriteLine($@"[+] Successfully deleted LDAP entry for GPO {guid}");
+            }
+            else
+            {
+                Console.WriteLine($@"[-] Could not find LDAP entry for GPO {guid}. Skipping deletion.");
+            }
 
             // 3. Delete the GPO directory in the SYSVOL
             string gpoDir = $@"\\{ad.DomainController}\SYSVOL\{ad.DomainName}\Policies\{guid}";
             Console.WriteLine($@"[*] Step3: Delete GPO Dir {gpoDir}");
             DirectoryInfo gpoDirInfo = new DirectoryInfo(gpoDir);
-            if (gpoDirInfo.Exists) gpoDirInfo.Delete(true);
+            if (gpoDirInfo.Exists)
+            {
+                gpoDirInfo.Delete(true);
+                Console.WriteLine($@"[+] Successfully deleted GPO directory: {gpoDir}");
+            }
+            else
+            {
+                Console.WriteLine($@"[-] GPO directory not found: {gpoDir}. Skipping deletion.");
+            }
         }
 
         private DirectoryEntry[] GetSites() {
-            DirectoryEntry sites = ad.ConnectLdap($@"CN=Sites,CN=Configuration,{ad.DomainDistingushedName}");
-            List<DirectoryEntry> sitesList = new List<DirectoryEntry>();
-            foreach(DirectoryEntry site in sites.Children)
+            try
             {
-                sitesList.Add(site);
+                DirectoryEntry sites = ad.ConnectLdap($@"CN=Sites,CN=Configuration,{ad.DomainDistingushedName}");
+                List<DirectoryEntry> sitesList = new List<DirectoryEntry>();
+                foreach (DirectoryEntry site in sites.Children)
+                {
+                    sitesList.Add(site);
+                }
+                return sitesList.ToArray();
             }
-            return sitesList.ToArray();
+            catch (DirectoryServicesCOMException e)
+            {
+                Console.WriteLine($@"[-] Error retrieving sites: {e.Message}");
+                Console.WriteLine($@"[-] This may be due to insufficient permissions or an incorrect LDAP path.");
+                return new DirectoryEntry[0];
+            }
         }
 
         // TODO

@@ -80,11 +80,20 @@ namespace SharpGPO
         {
             try
             {
-                guid = StandardizeGuid(guid);
+                Guid guidObj = new Guid(guid);
+                byte[] guidBytes = guidObj.ToByteArray();
+                StringBuilder filterBuilder = new StringBuilder();
+                foreach (byte b in guidBytes)
+                {
+                    filterBuilder.AppendFormat("\\{0:x2}", b);
+                }
+
+                string ldapFilter = $@"(objectGUID={filterBuilder.ToString()})";
+
                 Console.WriteLine($@"[+] Searching for GPO with GUID: {guid}");
                 DirectoryEntry policies = ConnectLdapPolicies();
                 DirectorySearcher searcher = new DirectorySearcher(policies);
-                searcher.Filter = $@"(objectGUID={guid})";
+                searcher.Filter = ldapFilter;
                 Console.WriteLine($@"[+] Using LDAP filter: {searcher.Filter}");
                 SearchResultCollection results = searcher.FindAll();
                 if (results.Count != 0)
@@ -93,6 +102,11 @@ namespace SharpGPO
                     return results[0].GetDirectoryEntry();
                 }
                 Console.WriteLine($@"[-] No GPO found with GUID: {guid}");
+                return null;
+            }
+            catch (FormatException)
+            {
+                Console.WriteLine($@"[-] Invalid GUID format: {guid}");
                 return null;
             }
             catch (Exception e)
